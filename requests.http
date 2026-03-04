@@ -1,0 +1,167 @@
+### Environment Variables
+@baseUrl = http://localhost:5000/api/v1
+@phone = +919876543210
+@otp = 123456
+
+### ----------------------------------------------------
+### 1. Authentication Module
+### ----------------------------------------------------
+
+### Send OTP
+POST {{baseUrl}}/auth/send-otp
+Content-Type: application/json
+
+{
+    "phone": "{{phone}}"
+}
+
+### Verify OTP (User) -> Will register if new
+POST {{baseUrl}}/auth/verify-otp/user
+Content-Type: application/json
+
+{
+    "phone": "{{phone}}",
+    "otp": "{{otp}}",
+    "name": "Deven User",
+    "city": "Mumbai"
+}
+
+### Verify OTP (Artist) -> Will register if new
+POST {{baseUrl}}/auth/verify-otp/artist
+Content-Type: application/json
+
+{
+    "phone": "+919999999999",
+    "otp": "{{otp}}",
+    "name": "Pandit Sharma",
+    "category": "Sundarkand",
+    "city": "Delhi"
+}
+
+### Admin Login
+POST {{baseUrl}}/auth/admin-login
+Content-Type: application/json
+
+{
+    "email": "admin@shobhnam.com",
+    "password": "adminpassword"
+}
+
+### ----------------------------------------------------
+### 2. User Module (Requires User Token)
+### ----------------------------------------------------
+
+### Get User Profile
+GET {{baseUrl}}/users/me
+Authorization: Bearer <USER_ACCESS_TOKEN>
+
+### Update User Profile
+PATCH {{baseUrl}}/users/me
+Authorization: Bearer <USER_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "city": "Navi Mumbai"
+}
+
+### ----------------------------------------------------
+### 3. Artist Module
+### ----------------------------------------------------
+
+### List Artists (Public)
+GET {{baseUrl}}/artists?page=1&limit=10&city=Delhi
+
+### Get Artist Profile (Artist Token)
+GET {{baseUrl}}/artists/me
+Authorization: Bearer <ARTIST_ACCESS_TOKEN>
+
+### Update Artist Profile (Artist Token)
+PATCH {{baseUrl}}/artists/me
+Authorization: Bearer <ARTIST_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "bio": "Experienced Sundarkand pathi",
+    "basePrice": 2500,
+    "isAvailable": true
+}
+
+### Approve Artist (Admin Token)
+PATCH {{baseUrl}}/artists/<ARTIST_ID>/approval
+Authorization: Bearer <ADMIN_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "status": "APPROVED"
+}
+
+### ----------------------------------------------------
+### 4. Booking Module
+### ----------------------------------------------------
+
+### Create Booking (User Token)
+POST {{baseUrl}}/bookings/request
+Authorization: Bearer <USER_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "artistId": "<ARTIST_ID>",
+    "date": "2026-03-10T10:00:00Z",
+    "type": "Sundarkand",
+    "expectedAudienceSize": 50,
+    "address": "123 Bhakti Road",
+    "city": "Mumbai",
+    "pinCode": "400001"
+}
+
+### Respond to Booking (Artist Token)
+PATCH {{baseUrl}}/bookings/<BOOKING_ID>/respond
+Authorization: Bearer <ARTIST_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "status": "CONFIRMED"
+}
+
+### User Bookings (User Token)
+GET {{baseUrl}}/bookings/user
+Authorization: Bearer <USER_ACCESS_TOKEN>
+
+### ----------------------------------------------------
+### 5. Review Module
+### ----------------------------------------------------
+
+### Submit Review (User Token) - Requires Booking = COMPLETED
+POST {{baseUrl}}/reviews
+Authorization: Bearer <USER_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "bookingId": "<BOOKING_ID>",
+    "rating": 5,
+    "comment": "Incredible performance, highly recommended!"
+}
+
+### Get Artist Reviews (Public)
+GET {{baseUrl}}/reviews/artist/<ARTIST_ID>
+
+### ----------------------------------------------------
+### 6. Admin Module (Requires Admin Token)
+### ----------------------------------------------------
+
+### Get Dashboard Stats
+GET {{baseUrl}}/admin/dashboard
+Authorization: Bearer <ADMIN_ACCESS_TOKEN>
+
+### Create Category
+POST {{baseUrl}}/admin/categories
+Authorization: Bearer <ADMIN_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+    "name": "Mata Ki Chowki",
+    "description": "Devotional night for Goddess Durga"
+}
+
+### Get Categories (Public)
+GET {{baseUrl}}/admin/categories
