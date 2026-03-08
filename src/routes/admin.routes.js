@@ -8,6 +8,7 @@ import {
   deleteReview,
   getAdminMe,
   getAllArtists,
+  getArtistApplications,
   getAllBookings,
   getAllReviews,
   getAllUsers,
@@ -35,6 +36,7 @@ router.get('/dashboard/stats', getDashboardStats);
 router.get('/users', getAllUsers);
 router.delete('/users/:id', banUser);
 
+router.get('/artists/applications', getArtistApplications);
 router.get('/artists', getAllArtists);
 router.patch('/artists/:id', approveRejectArtist);
 router.delete('/artists/:id', deleteArtist);

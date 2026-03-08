@@ -9,6 +9,40 @@ export const getMyArtistProfile = asyncHandler(async (req, res) => {
   );
 });
 
+/** Onit-style: single file upload, updates artist and returns URL */
+export const uploadProfilePhoto = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+
+  const artist = await Artist.findByIdAndUpdate(
+    req.user._id,
+    { $set: { profilePhoto: req.file.location } },
+    { new: true }
+  ).select('-refreshToken');
+
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location, artist }, 'Profile photo uploaded')
+  );
+});
+
+/** Onit-style: single file upload, updates artist and returns URL */
+export const uploadAadharCard = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+
+  const artist = await Artist.findByIdAndUpdate(
+    req.user._id,
+    { $set: { aadharCard: req.file.location } },
+    { new: true }
+  ).select('-refreshToken');
+
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location, artist }, 'Aadhar card uploaded')
+  );
+});
+
 // Parse experience string like "10 years" to number
 const parseExperienceYears = (experience) => {
   if (experience === undefined || experience === null || experience === '') return undefined;

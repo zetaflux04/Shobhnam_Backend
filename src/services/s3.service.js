@@ -20,8 +20,17 @@ export const uploadToS3 = multer({
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      cb(null, `uploads/${file.fieldname}-${uniqueSuffix}-${file.originalname}`);
+      const isArtist = req.path?.includes('/artists/');
+      const ext = (file.originalname || '').split('.').pop() || 'jpg';
+      let folder;
+      if (file.fieldname === 'aadharCard') {
+        folder = 'ArtistsData/AadharCards';
+      } else if (file.fieldname === 'profilePhoto') {
+        folder = isArtist ? 'ArtistsData/ProfilePictures' : 'UsersData/ProfilePictures';
+      } else {
+        folder = 'uploads';
+      }
+      cb(null, `${folder}/${file.fieldname}-${Date.now()}.${ext}`);
     }
   }),
   limits: {

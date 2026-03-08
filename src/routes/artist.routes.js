@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { approveRejectArtist, getArtistDetail, getMyArtistProfile, listArtists, updateArtistProfile } from '../controllers/artist.controller.js';
+import { approveRejectArtist, getArtistDetail, getMyArtistProfile, listArtists, updateArtistProfile, uploadAadharCard, uploadProfilePhoto } from '../controllers/artist.controller.js';
 import { authorizeRoles, verifyJWT } from '../middleware/auth.middleware.js';
-import { uploadFields } from '../services/s3.service.js';
+import { uploadFields, uploadSingle } from '../services/s3.service.js';
 
 const router = Router();
 
@@ -19,5 +19,9 @@ router.use(authorizeRoles('ARTIST'));
 router.route('/me')
   .get(getMyArtistProfile)
   .patch(uploadFields([{ name: 'profilePhoto', maxCount: 1 }, { name: 'aadharCard', maxCount: 1 }]), updateArtistProfile);
+
+// Onit-style: separate upload endpoints (one file per request) - avoids large multipart timeout on mobile
+router.post('/me/upload-profile-photo', uploadSingle('profilePhoto'), uploadProfilePhoto);
+router.post('/me/upload-aadhar', uploadSingle('aadharCard'), uploadAadharCard);
 
 export default router;

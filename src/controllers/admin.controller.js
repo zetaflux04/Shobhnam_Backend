@@ -13,10 +13,11 @@ export const getAdminMe = asyncHandler(async (req, res) => {
 });
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
-  const [totalUsers, totalArtists, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
+  const [totalUsers, totalArtists, pendingArtistsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
     await Promise.all([
       User.countDocuments({ role: 'USER' }),
       Artist.countDocuments(),
+      Artist.countDocuments({ status: 'PENDING' }),
       Booking.countDocuments(),
       Payment.aggregate([
         { $match: { status: 'SUCCESS' } },
@@ -50,7 +51,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     new ApiResponse(
       200,
       {
-        stats: { totalUsers, totalArtists, totalBookings, totalRevenue },
+        stats: { totalUsers, totalArtists, pendingArtistsCount, totalBookings, totalRevenue },
         recentBookings,
         bookingsByStatus,
         bookingTrend,
@@ -137,6 +138,37 @@ export const deleteCategory = asyncHandler(async (req, res) => {
   const category = await Category.findByIdAndDelete(id);
   if (!category) throw new ApiError(404, 'Category not found');
   res.status(200).json(new ApiResponse(200, {}, 'Category deleted'));
+});
+
+export const getArtistApplications = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, search = '' } = req.query;
+  const skip = (page - 1) * limit;
+
+  const query = { status: 'PENDING' };
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { 'location.city': { $regex: search, $options: 'i' } },
+      { phone: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const [artists, totalCount] = await Promise.all([
+    Artist.find(query).select('-refreshToken').sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    Artist.countDocuments(query),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(200, {
+      artists,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    }, 'Artist applications fetched')
+  );
 });
 
 export const getAllArtists = asyncHandler(async (req, res) => {

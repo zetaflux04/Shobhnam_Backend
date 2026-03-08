@@ -28,6 +28,9 @@ app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(morgan('dev')); // Logger
 
+// Root health check (for quick connectivity verification)
+app.get('/health', (req, res) => res.json({ ok: true, timestamp: Date.now() }));
+
 // --- Routes ---
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', userRouter);
