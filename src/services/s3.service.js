@@ -15,7 +15,7 @@ export const uploadToS3 = multer({
   storage: multerS3({
     s3: s3Config,
     bucket: env.AWS_S3_BUCKET_NAME,
-    acl: 'public-read', // Deprecated in some regions, but keeping for standard simple buckets
+    // ACL omitted: S3 buckets with "Bucket owner enforced" disable ACLs; use bucket policy for public read
     metadata: function (req, file, cb) {
       cb(null, { fieldName: file.fieldname });
     },
