@@ -70,6 +70,8 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
     state,
     serviceLocation,
     youtubeLink,
+    profilePhoto,
+    aadharCard,
   } = req.body;
   const updates = { $set: {} };
 
@@ -86,6 +88,14 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
 
   const expYears = experienceYears !== undefined ? experienceYears : parseExperienceYears(experience);
   if (expYears !== undefined) updates.$set.experienceYears = expYears;
+
+  // S3 URLs from req.body (upload-on-pick flow)
+  if (profilePhoto && typeof profilePhoto === 'string' && profilePhoto.trim()) {
+    updates.$set.profilePhoto = profilePhoto.trim();
+  }
+  if (aadharCard && typeof aadharCard === 'string' && aadharCard.trim()) {
+    updates.$set.aadharCard = aadharCard.trim();
+  }
 
   // Nested fields
   if (basePrice !== undefined || currency) {
@@ -106,15 +116,6 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
   // Arrays
   if (languages) {
     updates.$set.languages = Array.isArray(languages) ? languages : [languages];
-  }
-
-  // File uploads - support both single (req.file) and multiple (req.files)
-  if (req.file) {
-    updates.$set.profilePhoto = req.file.location;
-  }
-  if (req.files) {
-    if (req.files.profilePhoto?.[0]) updates.$set.profilePhoto = req.files.profilePhoto[0].location;
-    if (req.files.aadharCard?.[0]) updates.$set.aadharCard = req.files.aadharCard[0].location;
   }
 
   const updatedArtist = await Artist.findByIdAndUpdate(
