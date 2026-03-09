@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { adminLogin, sendOtp, verifyOtpArtist, verifyOtpUser } from '../controllers/auth.controller.js';
+import { adminLogin, hasDualProfile, sendOtp, switchProfile, verifyOtpArtist, verifyOtpUser } from '../controllers/auth.controller.js';
+import { authorizeRoles, verifyJWT } from '../middleware/auth.middleware.js';
 import { validateRequest } from '../middleware/validate.middleware.js';
 import { authValidation } from '../validations/auth.validation.js';
 
@@ -10,5 +11,9 @@ router.post('/verify-otp/user', validateRequest(authValidation.verifyOtpUser), v
 router.post('/verify-otp/artist', validateRequest(authValidation.verifyOtpArtist), verifyOtpArtist);
 
 router.post('/admin-login', validateRequest(authValidation.adminLogin), adminLogin);
+
+const userOrArtistAuth = [verifyJWT, authorizeRoles('USER', 'ARTIST', 'ADMIN')];
+router.get('/has-dual-profile', ...userOrArtistAuth, hasDualProfile);
+router.post('/switch-profile', ...userOrArtistAuth, switchProfile);
 
 export default router;
