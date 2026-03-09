@@ -137,6 +137,59 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { artist, accessToken, refreshToken }, 'Artist logged in successfully'));
 });
 
+export const hasDualProfile = asyncHandler(async (req, res) => {
+  const current = req.user;
+  if (!current) throw new ApiError(401, 'Unauthorized');
+
+  const phone = current.phone;
+  if (!phone) throw new ApiError(400, 'Phone not found');
+
+  const [userExists, artistExists] = await Promise.all([
+    User.findOne({ phone }).select('_id'),
+    Artist.findOne({ phone }).select('_id'),
+  ]);
+
+  const hasDualProfileResult = !!(userExists && artistExists);
+
+  return res.status(200).json(
+    new ApiResponse(200, { hasDualProfile: hasDualProfileResult }, 'Dual profile check completed')
+  );
+});
+
+export const switchProfile = asyncHandler(async (req, res) => {
+  const current = req.user;
+  if (!current) throw new ApiError(401, 'Unauthorized');
+
+  const phone = current.phone;
+  if (!phone) throw new ApiError(400, 'Phone not found');
+
+  if (current.role === 'ARTIST') {
+    const user = await User.findOne({ phone });
+    if (!user) throw new ApiError(400, 'No user profile found for this phone number');
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens('USER', user._id);
+    const options = { httpOnly: true, secure: true };
+    return res
+      .status(200)
+      .cookie('accessToken', accessToken, options)
+      .cookie('refreshToken', refreshToken, options)
+      .json(new ApiResponse(200, { user, accessToken, refreshToken }, 'Switched to user profile'));
+  }
+
+  if (current.role === 'USER' || current.role === 'ADMIN') {
+    const artist = await Artist.findOne({ phone });
+    if (!artist) throw new ApiError(400, 'No artist profile found for this phone number');
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens('ARTIST', artist._id);
+    const options = { httpOnly: true, secure: true };
+    return res
+      .status(200)
+      .cookie('accessToken', accessToken, options)
+      .cookie('refreshToken', refreshToken, options)
+      .json(new ApiResponse(200, { artist, accessToken, refreshToken }, 'Switched to artist profile'));
+  }
+
+  throw new ApiError(400, 'Cannot switch profile');
+});
+
 export const adminLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
