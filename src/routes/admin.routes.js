@@ -30,8 +30,12 @@ const router = Router();
 // Publicly readable categories
 router.get('/categories', getCategories);
 
-// Admin protected routes
+// Admin + Artist: shared upload endpoints (used by app and admin dashboard)
 router.use(verifyJWT);
+router.post('/upload-artist-profile-photo', authorizeRoles('ADMIN', 'ARTIST'), ...uploadWithErrorHandling(uploadSingle('profilePhoto'), uploadProfilePhotoAdmin));
+router.post('/upload-artist-aadhar', authorizeRoles('ADMIN', 'ARTIST'), ...uploadWithErrorHandling(uploadSingle('aadharCard'), uploadAadharAdmin));
+
+// Admin protected routes
 router.use(authorizeRoles('ADMIN'));
 
 router.get('/me', getAdminMe);
@@ -40,10 +44,6 @@ router.get('/dashboard/stats', getDashboardStats);
 
 router.get('/users', getAllUsers);
 router.delete('/users/:id', banUser);
-
-// Artist file uploads - use dedicated paths to avoid routing conflicts
-router.post('/upload-artist-profile-photo', ...uploadWithErrorHandling(uploadSingle('profilePhoto'), uploadProfilePhotoAdmin));
-router.post('/upload-artist-aadhar', ...uploadWithErrorHandling(uploadSingle('aadharCard'), uploadAadharAdmin));
 
 router.get('/artists/applications', getArtistApplications);
 router.get('/artists', getAllArtists);
