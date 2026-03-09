@@ -223,6 +223,93 @@ export const deleteArtist = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, {}, 'Artist deleted'));
 });
 
+/** Upload-only: returns S3 URL without updating any artist */
+export const uploadProfilePhotoAdmin = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location }, 'Profile photo uploaded')
+  );
+});
+
+/** Upload-only: returns S3 URL without updating any artist */
+export const uploadAadharAdmin = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location }, 'Aadhar card uploaded')
+  );
+});
+
+const parseExperienceYears = (experience) => {
+  if (experience === undefined || experience === null || experience === '') return undefined;
+  if (typeof experience === 'number') return experience;
+  const match = String(experience).match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : undefined;
+};
+
+const expertiseToCategory = {
+  'Ramleela artist': 'Ramleela',
+  'Classical singer': 'Other',
+  Instrumentalist: 'Other',
+};
+
+export const createArtist = asyncHandler(async (req, res) => {
+  const {
+    phone,
+    name,
+    fullName,
+    gender,
+    expertise,
+    experience,
+    experienceYears,
+    ramleelaCharacter,
+    serviceLocation,
+    youtubeLink,
+    profilePhoto,
+    aadharCard,
+  } = req.body;
+
+  const displayName = (name || fullName || '').trim();
+  if (!displayName) throw new ApiError(400, 'Full name is required');
+  if (!phone || String(phone).trim().length < 10) throw new ApiError(400, 'Valid phone number is required');
+  if (!gender) throw new ApiError(400, 'Gender is required');
+  if (!expertise) throw new ApiError(400, 'Expertise is required');
+  if (!serviceLocation || !String(serviceLocation).trim()) throw new ApiError(400, 'Service location is required');
+  if (!profilePhoto || !String(profilePhoto).trim()) throw new ApiError(400, 'Profile photo is required');
+  if (!aadharCard || !String(aadharCard).trim()) throw new ApiError(400, 'Aadhar card is required');
+
+  const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
+  const existing = await Artist.findOne({ phone: normalizedPhone });
+  if (existing) throw new ApiError(409, 'An artist with this phone number already exists');
+
+  const requireCharacter = expertise.toLowerCase().includes('ramleela');
+  if (requireCharacter && (!ramleelaCharacter || !String(ramleelaCharacter).trim())) {
+    throw new ApiError(400, 'Ramleela character is required when expertise includes Ramleela');
+  }
+
+  const expYears = experienceYears !== undefined ? experienceYears : parseExperienceYears(experience);
+  const category = expertiseToCategory[expertise] || 'Other';
+
+  const artist = await Artist.create({
+    phone: normalizedPhone,
+    name: displayName,
+    gender,
+    expertise,
+    category,
+    ramleelaCharacter: ramleelaCharacter?.trim() || undefined,
+    experienceYears: expYears ?? 0,
+    serviceLocation: String(serviceLocation).trim(),
+    youtubeLink: youtubeLink?.trim() || '',
+    profilePhoto: String(profilePhoto).trim(),
+    aadharCard: String(aadharCard).trim(),
+    status: 'PENDING',
+    location: {},
+  });
+
+  res.status(201).json(
+    new ApiResponse(201, artist, 'Artist created successfully')
+  );
+});
+
 export const getAllBookings = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
   const skip = (page - 1) * limit;

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   approveRejectArtist,
   banUser,
+  createArtist,
   createCategory,
   deleteArtist,
   deleteCategory,
@@ -17,8 +18,12 @@ import {
   getCategoriesForAdmin,
   getDashboardStats,
   toggleCategory,
+  uploadAadharAdmin,
+  uploadProfilePhotoAdmin,
 } from '../controllers/admin.controller.js';
 import { authorizeRoles, verifyJWT } from '../middleware/auth.middleware.js';
+import { uploadSingle } from '../services/s3.service.js';
+import { uploadWithErrorHandling } from '../utils/uploadUtils.js';
 
 const router = Router();
 
@@ -36,8 +41,13 @@ router.get('/dashboard/stats', getDashboardStats);
 router.get('/users', getAllUsers);
 router.delete('/users/:id', banUser);
 
+// Artist file uploads - use dedicated paths to avoid routing conflicts
+router.post('/upload-artist-profile-photo', ...uploadWithErrorHandling(uploadSingle('profilePhoto'), uploadProfilePhotoAdmin));
+router.post('/upload-artist-aadhar', ...uploadWithErrorHandling(uploadSingle('aadharCard'), uploadAadharAdmin));
+
 router.get('/artists/applications', getArtistApplications);
 router.get('/artists', getAllArtists);
+router.post('/artists', createArtist);
 router.patch('/artists/:id', approveRejectArtist);
 router.delete('/artists/:id', deleteArtist);
 

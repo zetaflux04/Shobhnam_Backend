@@ -20,7 +20,7 @@ export const uploadToS3 = multer({
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      const isArtist = req.path?.includes('/artists/');
+      const isArtist = req.path?.includes('/artists/') || req.path?.includes('/upload-artist-');
       const ext = (file.originalname || '').split('.').pop() || 'jpg';
       let folder;
       if (file.fieldname === 'aadharCard') {
