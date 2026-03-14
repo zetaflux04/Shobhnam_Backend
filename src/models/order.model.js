@@ -7,8 +7,15 @@ const orderItemSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     dateTime: { type: String },
     date: { type: Date },
+    slot: { type: String, enum: ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM'] },
+    addressId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Address',
+    },
     addressDetail: { type: String },
     addressLabel: { type: String },
+    city: { type: String },
+    pinCode: { type: String },
   },
   { _id: false }
 );

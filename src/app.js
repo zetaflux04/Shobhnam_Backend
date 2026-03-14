@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { ApiError } from './utils/ApiError.js';
 
 import adminRouter from './routes/admin.routes.js';
+import addressRouter from './routes/address.routes.js';
 import artistRouter from './routes/artist.routes.js';
 import authRouter from './routes/auth.routes.js';
 import bookingRouter from './routes/booking.routes.js';
@@ -35,6 +36,7 @@ app.get('/health', (req, res) => res.json({ ok: true, timestamp: Date.now() }));
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/artists', artistRouter);
+app.use('/api/v1/addresses', addressRouter);
 app.use('/api/v1/bookings', bookingRouter);
 app.use('/api/v1/orders', orderRouter);
 app.use('/api/v1/payments', paymentRouter);

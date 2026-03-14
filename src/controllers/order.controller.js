@@ -1,9 +1,11 @@
+import { Address } from '../models/address.model.js';
 import { Order } from '../models/order.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const TRAVELING_FEE = 500;
+const ALLOWED_SLOTS = new Set(['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM']);
 
 export const createOrder = asyncHandler(async (req, res) => {
   const { items } = req.body;
@@ -12,15 +14,56 @@ export const createOrder = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Order items are required');
   }
 
-  const orderItems = items.map((item) => ({
-    serviceName: item.serviceName,
-    packageTitle: item.packageTitle,
-    price: item.price,
-    dateTime: item.dateTime,
-    date: item.date,
-    addressDetail: item.addressDetail,
-    addressLabel: item.addressLabel,
-  }));
+  const orderItems = [];
+  for (const item of items) {
+    if (!item?.serviceName || !item?.packageTitle || typeof item.price !== 'number') {
+      throw new ApiError(400, 'Each order item must include serviceName, packageTitle and price');
+    }
+    if (!item.date || Number.isNaN(new Date(item.date).getTime())) {
+      throw new ApiError(400, 'Each order item must include a valid date');
+    }
+    if (!ALLOWED_SLOTS.has(item.slot)) {
+      throw new ApiError(400, 'Each order item must include a valid slot');
+    }
+
+    let addressLabel = String(item.addressLabel ?? '').trim();
+    let addressDetail = String(item.addressDetail ?? '').trim();
+    let city = String(item.city ?? '').trim();
+    let pinCode = String(item.pinCode ?? '').trim();
+    let normalizedAddressId = null;
+
+    if (item.addressId) {
+      const ownedAddress = await Address.findOne({ _id: item.addressId, user: req.user._id });
+      if (!ownedAddress) {
+        throw new ApiError(404, 'Address not found for this user');
+      }
+      normalizedAddressId = ownedAddress._id;
+      addressLabel = ownedAddress.saveAs;
+      addressDetail = [ownedAddress.houseFloor, ownedAddress.towerBlock, ownedAddress.landmark]
+        .filter(Boolean)
+        .join(', ');
+      city = ownedAddress.city;
+      pinCode = ownedAddress.pinCode;
+    }
+
+    if (!addressDetail) {
+      throw new ApiError(400, 'Each order item must include an address');
+    }
+
+    orderItems.push({
+      serviceName: item.serviceName,
+      packageTitle: item.packageTitle,
+      price: item.price,
+      dateTime: item.dateTime,
+      date: new Date(item.date),
+      slot: item.slot,
+      addressId: normalizedAddressId,
+      addressDetail,
+      addressLabel,
+      city,
+      pinCode,
+    });
+  }
 
   const totalAmount = orderItems.reduce((sum, i) => sum + (i.price ?? 0), 0);
   const grandTotal = totalAmount + TRAVELING_FEE;

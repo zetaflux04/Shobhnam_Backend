@@ -16,14 +16,22 @@ const bookingSchema = new mongoose.Schema(
     },
     eventDetails: {
       date: { type: Date, required: true },
+      slot: { type: String, enum: ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM'], required: true },
       type: { type: String, required: true }, // array of strings maybe? e.g. 'Ramleela', 'Sundarkand'
       expectedAudienceSize: { type: Number },
       specialRequirements: { type: String },
     },
     location: {
+      addressId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Address',
+      },
       address: { type: String, required: true },
       city: { type: String, required: true },
       pinCode: { type: String },
+      saveAs: { type: String },
+      recipientName: { type: String },
+      recipientPhone: { type: String },
     },
     pricing: {
       agreedPrice: { type: Number, required: true },
