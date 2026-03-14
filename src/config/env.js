@@ -16,10 +16,14 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   
-  TWILIO_ACCOUNT_SID: z.string().min(1, 'Twilio Account SID is required'),
-  TWILIO_AUTH_TOKEN: z.string().min(1, 'Twilio Auth Token is required'),
-  TWILIO_PHONE_NUMBER: z.string().min(1, 'Twilio Phone Number is required'),
-  
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_PHONE_NUMBER: z.string().optional(),
+
+  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1, 'WhatsApp Phone Number ID is required for OTP'),
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1, 'WhatsApp Access Token is required for OTP'),
+  WHATSAPP_AUTH_TEMPLATE: z.string().default('auth_otp'),
+
   RAZORPAY_KEY_ID: z.string().min(1, 'Razorpay Key ID is required'),
   RAZORPAY_KEY_SECRET: z.string().min(1, 'Razorpay Key Secret is required'),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),

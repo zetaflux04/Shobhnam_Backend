@@ -2,10 +2,14 @@ import { env } from '../config/env.js';
 import { Artist } from '../models/artist.model.js';
 import { OTP } from '../models/otp.model.js';
 import { User } from '../models/user.model.js';
-import { sendSMS } from '../services/twilio.service.js';
+import { sendOtpViaWhatsApp } from '../services/whatsapp.service.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+
+// Test number for development: accepts OTP 123456 without prior sendOtp
+const TEST_PHONE = '+918546031266';
+const TEST_OTP = '123456';
 
 // Normalize phone to E.164 for Indian numbers (Twilio needs +91XXXXXXXXXX)
 const normalizePhone = (phone) => {
@@ -39,8 +43,9 @@ export const sendOtp = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  // Generate 6-digit OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // Test number: use fixed OTP, skip Twilio SMS
+  const isTestNumber = normalizedPhone === TEST_PHONE;
+  const otpCode = isTestNumber ? TEST_OTP : Math.floor(100000 + Math.random() * 900000).toString();
 
   // Save OTP in Database
   await OTP.create({
@@ -49,16 +54,11 @@ export const sendOtp = asyncHandler(async (req, res) => {
     expiresAt: new Date(Date.now() + 5 * 60000), // 5 mins
   });
 
-  // Send SMS via Twilio
-  // Bypass: Twilio rejects "To" = "From". In dev, also allow mock when phone matches.
-  const isSameAsTwilioNumber = normalizedPhone === env.TWILIO_PHONE_NUMBER;
-  const useMockOtp =
-    (env.NODE_ENV !== 'production' && isSameAsTwilioNumber);
-
-  if (useMockOtp) {
-    console.log(`[DEV MODE] OTP for ${normalizedPhone}: ${otpCode} (${isSameAsTwilioNumber ? 'To/From same - Twilio would reject' : 'mock SID'})`);
+  // Send OTP via WhatsApp (skip for test number)
+  if (isTestNumber) {
+    console.log(`[TEST MODE] OTP for ${normalizedPhone}: ${otpCode} (no WhatsApp sent)`);
   } else {
-    await sendSMS(normalizedPhone, `Your Shobhnam login OTP is ${otpCode}. It is valid for 5 minutes.`);
+    await sendOtpViaWhatsApp(normalizedPhone, otpCode);
   }
 
   return res.status(200).json(
@@ -73,11 +73,14 @@ export const verifyOtpUser = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
-  if (!record) throw new ApiError(400, 'Invalid or Expired OTP');
-
-  record.isUsed = true;
-  await record.save();
+  // Test number: accept 123456 without DB lookup
+  const isTestNumber = normalizedPhone === TEST_PHONE && otp === TEST_OTP;
+  if (!isTestNumber) {
+    const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
+    if (!record) throw new ApiError(400, 'Invalid or Expired OTP');
+    record.isUsed = true;
+    await record.save();
+  }
 
   // Check if User exists
   let user = await User.findOne({ phone: normalizedPhone });
@@ -108,11 +111,14 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
-  if (!record) throw new ApiError(400, 'Invalid or Expired OTP');
-
-  record.isUsed = true;
-  await record.save();
+  // Test number: accept 123456 without DB lookup
+  const isTestNumber = normalizedPhone === TEST_PHONE && otp === TEST_OTP;
+  if (!isTestNumber) {
+    const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
+    if (!record) throw new ApiError(400, 'Invalid or Expired OTP');
+    record.isUsed = true;
+    await record.save();
+  }
 
   // Check if Artist exists
   let artist = await Artist.findOne({ phone: normalizedPhone });
