@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  assignArtistToBooking,
   approveRejectArtist,
   banUser,
   createArtist,
@@ -18,6 +19,7 @@ import {
   getCategoriesForAdmin,
   getDashboardStats,
   toggleCategory,
+  unassignArtistFromBooking,
   uploadAadharAdmin,
   uploadProfilePhotoAdmin,
 } from '../controllers/admin.controller.js';
@@ -53,6 +55,8 @@ router.delete('/artists/:id', deleteArtist);
 
 router.get('/bookings', getAllBookings);
 router.get('/bookings/:id', getBookingById);
+router.patch('/bookings/:id/assign-artist', assignArtistToBooking);
+router.patch('/bookings/:id/unassign-artist', unassignArtistFromBooking);
 
 router.get('/reviews', getAllReviews);
 router.delete('/reviews/:id', deleteReview);

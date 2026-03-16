@@ -1,5 +1,4 @@
 import { env } from '../config/env.js';
-import { Address } from '../models/address.model.js';
 import { Artist } from '../models/artist.model.js';
 import { Booking } from '../models/booking.model.js';
 import { sendSMS } from '../services/twilio.service.js';
@@ -19,89 +18,24 @@ const mockSmsCheck = async (phone, msg) => {
   }
 };
 
-const ALLOWED_SLOTS = new Set(['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM']);
-
 export const createBooking = asyncHandler(async (req, res) => {
-  const {
-    artistId,
-    date,
-    slot,
-    type,
-    expectedAudienceSize,
-    specialRequirements,
-    addressId,
-    address,
-    city,
-    pinCode,
-    addressLabel,
-    recipientName,
-    recipientPhone,
-  } = req.body;
-
-  if (!date || Number.isNaN(new Date(date).getTime())) {
-    throw new ApiError(400, 'Valid event date is required');
-  }
-  if (!ALLOWED_SLOTS.has(slot)) {
-    throw new ApiError(400, 'Invalid slot. Allowed slots are 9:00 AM, 12:00 PM, 3:00 PM, 6:00 PM');
-  }
-  if (!type) {
-    throw new ApiError(400, 'Event type is required');
-  }
+  const { artistId, date, type, expectedAudienceSize, specialRequirements, address, city, pinCode } = req.body;
 
   const artist = await Artist.findById(artistId);
   if (!artist) throw new ApiError(404, 'Artist not found');
   if (artist.status !== 'APPROVED') throw new ApiError(400, 'Artist is not available for booking');
 
-  let resolvedAddress = String(address ?? '').trim();
-  let resolvedCity = String(city ?? '').trim();
-  let resolvedPinCode = String(pinCode ?? '').trim();
-  let resolvedAddressLabel = String(addressLabel ?? '').trim();
-  let resolvedRecipientName = String(recipientName ?? '').trim();
-  let resolvedRecipientPhone = String(recipientPhone ?? '').trim();
-  let resolvedAddressId = null;
-
-  if (addressId) {
-    const ownedAddress = await Address.findOne({ _id: addressId, user: req.user._id });
-    if (!ownedAddress) {
-      throw new ApiError(404, 'Address not found for this user');
-    }
-    resolvedAddressId = ownedAddress._id;
-    resolvedAddress = [ownedAddress.houseFloor, ownedAddress.towerBlock, ownedAddress.landmark]
-      .filter(Boolean)
-      .join(', ');
-    resolvedCity = ownedAddress.city;
-    resolvedPinCode = ownedAddress.pinCode;
-    resolvedAddressLabel = ownedAddress.saveAs;
-    resolvedRecipientName = ownedAddress.recipientName;
-    resolvedRecipientPhone = ownedAddress.recipientPhone;
-  }
-
-  if (!resolvedAddress || !resolvedCity) {
-    throw new ApiError(400, 'Address and city are required');
-  }
-
   const newBooking = await Booking.create({
     user: req.user._id,
     artist: artistId,
-    eventDetails: { date: new Date(date), slot, type, expectedAudienceSize, specialRequirements },
-    location: {
-      addressId: resolvedAddressId,
-      address: resolvedAddress,
-      city: resolvedCity,
-      pinCode: resolvedPinCode,
-      saveAs: resolvedAddressLabel,
-      recipientName: resolvedRecipientName,
-      recipientPhone: resolvedRecipientPhone,
-    },
+    eventDetails: { date, type, expectedAudienceSize, specialRequirements },
+    location: { address, city, pinCode },
     pricing: { agreedPrice: artist.pricing.basePrice, currency: artist.pricing.currency },
     status: 'PENDING'
   });
 
   // Notify Artist
-  await mockSmsCheck(
-    artist.phone,
-    `You have a new booking request for ${type} on ${new Date(date).toDateString()} at ${slot}. Check your Shobhnam app.`
-  );
+  await mockSmsCheck(artist.phone, `You have a new booking request for ${type} on ${new Date(date).toDateString()}. Check your Shobhnam app.`);
 
   res.status(201).json(new ApiResponse(201, newBooking, 'Booking request sent successfully'));
 });

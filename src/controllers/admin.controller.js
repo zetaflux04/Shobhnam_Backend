@@ -350,6 +350,50 @@ export const getBookingById = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, booking, 'Booking details fetched'));
 });
 
+export const assignArtistToBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { artistId, note } = req.body;
+
+  if (!artistId) throw new ApiError(400, 'artistId is required');
+
+  const [booking, artist] = await Promise.all([
+    Booking.findById(id),
+    Artist.findById(artistId),
+  ]);
+
+  if (!booking) throw new ApiError(404, 'Booking not found');
+  if (!artist) throw new ApiError(404, 'Artist not found');
+  if (artist.status !== 'APPROVED') {
+    throw new ApiError(400, 'Only approved artists can be assigned');
+  }
+
+  booking.artist = artist._id;
+  booking.assignment = {
+    assignedBy: req.user._id,
+    assignedAt: new Date(),
+    source: 'ADMIN',
+    note: note ? String(note).trim() : undefined,
+  };
+
+  await booking.save();
+  await booking.populate('artist', 'name phone category');
+
+  res.status(200).json(new ApiResponse(200, booking, 'Artist assigned to booking'));
+});
+
+export const unassignArtistFromBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const booking = await Booking.findById(id);
+  if (!booking) throw new ApiError(404, 'Booking not found');
+
+  booking.artist = undefined;
+  booking.assignment = undefined;
+  await booking.save();
+
+  res.status(200).json(new ApiResponse(200, booking, 'Artist unassigned from booking'));
+});
+
 export const getAllReviews = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const skip = (page - 1) * limit;

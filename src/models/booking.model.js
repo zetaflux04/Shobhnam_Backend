@@ -11,7 +11,6 @@ const bookingSchema = new mongoose.Schema(
     artist: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Artist',
-      required: true,
       index: true,
     },
     eventDetails: {
@@ -51,7 +50,24 @@ const bookingSchema = new mongoose.Schema(
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Payment', // Resolves when payment module is built
-    }
+    },
+    assignment: {
+      assignedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      assignedAt: {
+        type: Date,
+      },
+      source: {
+        type: String,
+        enum: ['ADMIN', 'RAMLEELA_CUSTOMIZATION'],
+      },
+      note: {
+        type: String,
+        trim: true,
+      },
+    },
   },
   { timestamps: true }
 );
