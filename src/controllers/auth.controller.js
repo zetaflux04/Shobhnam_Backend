@@ -19,6 +19,18 @@ const normalizePhone = (phone) => {
   return `+91${digits.slice(-10)}`;
 };
 
+const buildPhoneLookupQuery = (phone) => {
+  const normalizedPhone = normalizePhone(phone);
+  const digits = String(phone || '').replace(/\D/g, '');
+  const lastTenDigits = digits.slice(-10);
+  const variants = [phone, normalizedPhone, lastTenDigits, `+91${lastTenDigits}`]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+
+  return { phone: { $in: [...new Set(variants)] } };
+};
+
 // Helper to generate cookies
 const generateAccessAndRefreshTokens = async (type, userId) => {
   let user;
@@ -158,9 +170,10 @@ export const hasDualProfile = asyncHandler(async (req, res) => {
   const phone = current.phone;
   if (!phone) throw new ApiError(400, 'Phone not found');
 
+  const phoneQuery = buildPhoneLookupQuery(phone);
   const [userExists, artistExists] = await Promise.all([
-    User.findOne({ phone }).select('_id'),
-    Artist.findOne({ phone }).select('_id'),
+    User.findOne(phoneQuery).select('_id'),
+    Artist.findOne(phoneQuery).select('_id'),
   ]);
 
   const hasDualProfileResult = !!(userExists && artistExists);
@@ -176,9 +189,10 @@ export const switchProfile = asyncHandler(async (req, res) => {
 
   const phone = current.phone;
   if (!phone) throw new ApiError(400, 'Phone not found');
+  const phoneQuery = buildPhoneLookupQuery(phone);
 
   if (current.role === 'ARTIST') {
-    const user = await User.findOne({ phone });
+    const user = await User.findOne(phoneQuery);
     if (!user) throw new ApiError(400, 'No user profile found for this phone number');
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens('USER', user._id);
     const options = { httpOnly: true, secure: true };
@@ -190,7 +204,7 @@ export const switchProfile = asyncHandler(async (req, res) => {
   }
 
   if (current.role === 'USER' || current.role === 'ADMIN') {
-    const artist = await Artist.findOne({ phone });
+    const artist = await Artist.findOne(phoneQuery);
     if (!artist) throw new ApiError(400, 'No artist profile found for this phone number');
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens('ARTIST', artist._id);
     const options = { httpOnly: true, secure: true };
