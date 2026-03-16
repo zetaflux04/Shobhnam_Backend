@@ -47,6 +47,50 @@ const artistSchema = new mongoose.Schema(
     aadharCard: {
       type: String, // S3 URL
     },
+    bankDetails: {
+      accountHolderName: {
+        type: String,
+        trim: true,
+      },
+      bankName: {
+        type: String,
+        trim: true,
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+      },
+      ifscCode: {
+        type: String,
+        trim: true,
+        uppercase: true,
+      },
+      panCardUrl: {
+        type: String,
+        trim: true,
+      },
+    },
+    bankVerification: {
+      status: {
+        type: String,
+        enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'],
+        default: 'NOT_SUBMITTED',
+      },
+      submittedAt: {
+        type: Date,
+      },
+      reviewedAt: {
+        type: Date,
+      },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      rejectionReason: {
+        type: String,
+        trim: true,
+      },
+    },
     serviceLocation: {
       type: String,
       trim: true,

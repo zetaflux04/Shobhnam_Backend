@@ -25,6 +25,8 @@ export const uploadToS3 = multer({
       let folder;
       if (file.fieldname === 'aadharCard') {
         folder = 'ArtistsData/AadharCards';
+      } else if (file.fieldname === 'panCard') {
+        folder = 'ArtistsData/PanCards';
       } else if (file.fieldname === 'profilePhoto') {
         folder = isArtist ? 'ArtistsData/ProfilePictures' : 'UsersData/ProfilePictures';
       } else {

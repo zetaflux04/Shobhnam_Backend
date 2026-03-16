@@ -10,6 +10,7 @@ import {
   deleteReview,
   getAdminMe,
   getAllArtists,
+  getBankVerificationArtists,
   getArtistApplications,
   getAllBookings,
   getAllReviews,
@@ -18,9 +19,11 @@ import {
   getCategories,
   getCategoriesForAdmin,
   getDashboardStats,
+  reviewArtistBankVerification,
   toggleCategory,
   unassignArtistFromBooking,
   uploadAadharAdmin,
+  uploadPanCardAdmin,
   uploadProfilePhotoAdmin,
 } from '../controllers/admin.controller.js';
 import { authorizeRoles, verifyJWT } from '../middleware/auth.middleware.js';
@@ -36,6 +39,7 @@ router.get('/categories', getCategories);
 router.use(verifyJWT);
 router.post('/upload-artist-profile-photo', authorizeRoles('ADMIN', 'ARTIST'), ...uploadWithErrorHandling(uploadSingle('profilePhoto'), uploadProfilePhotoAdmin));
 router.post('/upload-artist-aadhar', authorizeRoles('ADMIN', 'ARTIST'), ...uploadWithErrorHandling(uploadSingle('aadharCard'), uploadAadharAdmin));
+router.post('/upload-artist-pan-card', authorizeRoles('ADMIN', 'ARTIST'), ...uploadWithErrorHandling(uploadSingle('panCard'), uploadPanCardAdmin));
 
 // Admin protected routes
 router.use(authorizeRoles('ADMIN'));
@@ -49,8 +53,10 @@ router.delete('/users/:id', banUser);
 
 router.get('/artists/applications', getArtistApplications);
 router.get('/artists', getAllArtists);
+router.get('/artists/bank-verifications', getBankVerificationArtists);
 router.post('/artists', createArtist);
 router.patch('/artists/:id', approveRejectArtist);
+router.patch('/artists/:id/bank-verification', reviewArtistBankVerification);
 router.delete('/artists/:id', deleteArtist);
 
 router.get('/bookings', getAllBookings);

@@ -8,6 +8,13 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+const BANK_VERIFICATION_STATUS = {
+  NOT_SUBMITTED: 'NOT_SUBMITTED',
+  PENDING: 'PENDING',
+  VERIFIED: 'VERIFIED',
+  REJECTED: 'REJECTED',
+};
+
 const normalizeIndianPhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
   if (digits.length < 10) return String(phone || '').trim();
@@ -40,13 +47,14 @@ export const getAdminMe = asyncHandler(async (req, res) => {
 });
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
-  const [totalUsers, totalArtists, pendingArtistsCount, approvedArtistsCount, liveArtistsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
+  const [totalUsers, totalArtists, pendingArtistsCount, approvedArtistsCount, liveArtistsCount, pendingBankVerificationsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
     await Promise.all([
       User.countDocuments({ role: 'USER' }),
       Artist.countDocuments(),
       Artist.countDocuments({ status: 'PENDING' }),
       Artist.countDocuments({ status: 'APPROVED' }),
       Artist.countDocuments({ isLive: true }),
+      Artist.countDocuments({ 'bankVerification.status': BANK_VERIFICATION_STATUS.PENDING }),
       Booking.countDocuments(),
       Payment.aggregate([
         { $match: { status: 'SUCCESS' } },
@@ -86,6 +94,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           pendingArtistsCount,
           approvedArtistsCount,
           liveArtistsCount,
+          pendingBankVerificationsCount,
           totalBookings,
           totalRevenue,
         },
@@ -239,6 +248,86 @@ export const getAllArtists = asyncHandler(async (req, res) => {
   );
 });
 
+export const getBankVerificationArtists = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, search = '', status = BANK_VERIFICATION_STATUS.PENDING } = req.query;
+  const skip = (page - 1) * limit;
+
+  const allowedStatuses = Object.values(BANK_VERIFICATION_STATUS);
+  if (status && !allowedStatuses.includes(status)) {
+    throw new ApiError(400, `Invalid bank verification status. Allowed: ${allowedStatuses.join(', ')}`);
+  }
+
+  const query = {};
+  if (status) query['bankVerification.status'] = status;
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { phone: { $regex: search, $options: 'i' } },
+      { 'bankDetails.accountHolderName': { $regex: search, $options: 'i' } },
+      { 'bankDetails.bankName': { $regex: search, $options: 'i' } },
+      { 'bankDetails.ifscCode': { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const [artists, totalCount] = await Promise.all([
+    Artist.find(query).select('-refreshToken').sort({ 'bankVerification.submittedAt': -1, createdAt: -1 }).skip(skip).limit(Number(limit)),
+    Artist.countDocuments(query),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        artists,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      },
+      'Bank verification artists fetched'
+    )
+  );
+});
+
+export const reviewArtistBankVerification = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status, reason } = req.body;
+
+  if (![BANK_VERIFICATION_STATUS.VERIFIED, BANK_VERIFICATION_STATUS.REJECTED].includes(status)) {
+    throw new ApiError(400, 'Invalid status. Use VERIFIED or REJECTED');
+  }
+  if (status === BANK_VERIFICATION_STATUS.REJECTED && !String(reason || '').trim()) {
+    throw new ApiError(400, 'Rejection reason is required');
+  }
+
+  const artist = await Artist.findById(id).select('-refreshToken');
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  const currentStatus = artist.bankVerification?.status || BANK_VERIFICATION_STATUS.NOT_SUBMITTED;
+  if (currentStatus !== BANK_VERIFICATION_STATUS.PENDING) {
+    throw new ApiError(400, 'Only pending bank verifications can be reviewed');
+  }
+
+  artist.bankVerification = {
+    ...(artist.bankVerification || {}),
+    status,
+    reviewedAt: new Date(),
+    reviewedBy: req.user?._id,
+    rejectionReason: status === BANK_VERIFICATION_STATUS.REJECTED ? String(reason).trim() : '',
+  };
+  await artist.save();
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      artist,
+      status === BANK_VERIFICATION_STATUS.VERIFIED ? 'Bank verification approved' : 'Bank verification rejected'
+    )
+  );
+});
+
 export const approveRejectArtist = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -277,6 +366,13 @@ export const uploadAadharAdmin = asyncHandler(async (req, res) => {
   if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
   res.status(200).json(
     new ApiResponse(200, { fileSavedUrl: req.file.location }, 'Aadhar card uploaded')
+  );
+});
+
+export const uploadPanCardAdmin = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location }, 'PAN card uploaded')
   );
 });
 
@@ -349,6 +445,9 @@ export const createArtist = asyncHandler(async (req, res) => {
       verified: false,
       allDone: false,
       lastUpdatedAt: new Date(),
+    },
+    bankVerification: {
+      status: BANK_VERIFICATION_STATUS.NOT_SUBMITTED,
     },
     isLive: false,
     location: {},

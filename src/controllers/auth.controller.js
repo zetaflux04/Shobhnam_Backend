@@ -147,6 +147,9 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
         allDone: false,
         lastUpdatedAt: new Date(),
       },
+      bankVerification: {
+        status: 'NOT_SUBMITTED',
+      },
       isLive: false,
       location: {},
     });

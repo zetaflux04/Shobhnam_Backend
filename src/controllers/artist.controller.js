@@ -3,6 +3,13 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+const BANK_VERIFICATION_STATUS = {
+  NOT_SUBMITTED: 'NOT_SUBMITTED',
+  PENDING: 'PENDING',
+  VERIFIED: 'VERIFIED',
+  REJECTED: 'REJECTED',
+};
+
 const isArtistProfileComplete = (artist) =>
   Boolean(
     String(artist?.name || '').trim() &&
@@ -23,6 +30,15 @@ const buildOnboardingProgress = (artist) => {
     lastUpdatedAt: new Date(),
   };
 };
+
+const getBankVerificationStatus = (artist) =>
+  artist?.bankVerification?.status || BANK_VERIFICATION_STATUS.NOT_SUBMITTED;
+
+const normalizeAccountNumber = (value) => String(value || '').replace(/\s+/g, '').trim();
+
+const normalizeIfscCode = (value) => String(value || '').replace(/\s+/g, '').toUpperCase().trim();
+
+const isValidIfscCode = (value) => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value);
 
 export const getMyArtistProfile = asyncHandler(async (req, res) => {
   res.status(200).json(
@@ -64,6 +80,99 @@ export const uploadAadharCard = asyncHandler(async (req, res) => {
   );
 });
 
+export const uploadPanCard = asyncHandler(async (req, res) => {
+  if (!req.file?.location) throw new ApiError(400, 'No file uploaded');
+
+  const artist = await Artist.findByIdAndUpdate(
+    req.user._id,
+    { $set: { 'bankDetails.panCardUrl': req.file.location } },
+    { new: true }
+  ).select('-refreshToken');
+
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  res.status(200).json(
+    new ApiResponse(200, { fileSavedUrl: req.file.location, artist }, 'PAN card uploaded')
+  );
+});
+
+export const updateMyBankDetails = asyncHandler(async (req, res) => {
+  const {
+    accountHolderName,
+    bankName,
+    accountNumber,
+    ifscCode,
+    panCardUrl,
+  } = req.body;
+
+  const nextAccountHolderName = String(accountHolderName || '').trim();
+  const nextBankName = String(bankName || '').trim();
+  const nextAccountNumber = normalizeAccountNumber(accountNumber);
+  const nextIfscCode = normalizeIfscCode(ifscCode);
+  const nextPanCardUrl = String(panCardUrl || '').trim();
+
+  if (!nextAccountHolderName) throw new ApiError(400, 'Account holder name is required');
+  if (!nextBankName) throw new ApiError(400, 'Bank name is required');
+  if (!nextAccountNumber) throw new ApiError(400, 'Account number is required');
+  if (!/^\d{9,18}$/.test(nextAccountNumber)) {
+    throw new ApiError(400, 'Account number must be 9 to 18 digits');
+  }
+  if (!nextIfscCode) throw new ApiError(400, 'IFSC code is required');
+  if (!isValidIfscCode(nextIfscCode)) throw new ApiError(400, 'Invalid IFSC code');
+  if (!nextPanCardUrl) throw new ApiError(400, 'PAN card upload is required');
+
+  const artist = await Artist.findById(req.user._id).select('-refreshToken');
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  artist.bankDetails = {
+    accountHolderName: nextAccountHolderName,
+    bankName: nextBankName,
+    accountNumber: nextAccountNumber,
+    ifscCode: nextIfscCode,
+    panCardUrl: nextPanCardUrl,
+  };
+
+  artist.bankVerification = {
+    status: BANK_VERIFICATION_STATUS.PENDING,
+    submittedAt: new Date(),
+    reviewedAt: undefined,
+    reviewedBy: undefined,
+    rejectionReason: '',
+  };
+
+  await artist.save();
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        bankDetails: artist.bankDetails,
+        bankVerification: artist.bankVerification,
+      },
+      'Bank details submitted successfully'
+    )
+  );
+});
+
+export const getMyBankVerificationStatus = asyncHandler(async (req, res) => {
+  const artist = await Artist.findById(req.user._id).select('-refreshToken');
+  if (!artist) throw new ApiError(404, 'Artist not found');
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        status: getBankVerificationStatus(artist),
+        rejectionReason: artist.bankVerification?.rejectionReason || '',
+        submittedAt: artist.bankVerification?.submittedAt || null,
+        reviewedAt: artist.bankVerification?.reviewedAt || null,
+        bankDetails: artist.bankDetails || {},
+      },
+      'Bank verification status fetched successfully'
+    )
+  );
+});
+
 // Parse experience string like "10 years" to number
 const parseExperienceYears = (experience) => {
   if (experience === undefined || experience === null || experience === '') return undefined;
@@ -94,6 +203,11 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
     youtubeLink,
     profilePhoto,
     aadharCard,
+    accountHolderName,
+    bankName,
+    accountNumber,
+    ifscCode,
+    panCardUrl,
   } = req.body;
   const updates = { $set: {} };
 
@@ -120,6 +234,43 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
   }
   if (aadharCard && typeof aadharCard === 'string' && aadharCard.trim()) {
     updates.$set.aadharCard = aadharCard.trim();
+  }
+
+  // Bank details (for bank verification flow)
+  const hasBankPayload =
+    accountHolderName !== undefined ||
+    bankName !== undefined ||
+    accountNumber !== undefined ||
+    ifscCode !== undefined ||
+    panCardUrl !== undefined;
+
+  if (hasBankPayload) {
+    const nextAccountHolderName = String(accountHolderName || '').trim();
+    const nextBankName = String(bankName || '').trim();
+    const nextAccountNumber = normalizeAccountNumber(accountNumber);
+    const nextIfscCode = normalizeIfscCode(ifscCode);
+    const nextPanCardUrl = String(panCardUrl || '').trim();
+
+    if (!nextAccountHolderName) throw new ApiError(400, 'Account holder name is required');
+    if (!nextBankName) throw new ApiError(400, 'Bank name is required');
+    if (!nextAccountNumber || !/^\d{6,18}$/.test(nextAccountNumber)) {
+      throw new ApiError(400, 'Account number must be 6 to 18 digits');
+    }
+    if (!nextIfscCode || !/^[A-Z0-9]{6,15}$/.test(nextIfscCode)) {
+      throw new ApiError(400, 'IFSC code is invalid');
+    }
+    if (!nextPanCardUrl) throw new ApiError(400, 'PAN card upload is required');
+
+    updates.$set['bankDetails.accountHolderName'] = nextAccountHolderName;
+    updates.$set['bankDetails.bankName'] = nextBankName;
+    updates.$set['bankDetails.accountNumber'] = nextAccountNumber;
+    updates.$set['bankDetails.ifscCode'] = nextIfscCode;
+    updates.$set['bankDetails.panCardUrl'] = nextPanCardUrl;
+    updates.$set['bankVerification.status'] = BANK_VERIFICATION_STATUS.PENDING;
+    updates.$set['bankVerification.submittedAt'] = new Date();
+    updates.$set['bankVerification.reviewedAt'] = null;
+    updates.$set['bankVerification.reviewedBy'] = null;
+    updates.$set['bankVerification.rejectionReason'] = '';
   }
 
   // Nested fields
