@@ -128,6 +128,14 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
       phone: normalizedPhone,
       name: name || undefined,
       status: 'PENDING',
+      onboardingProgress: {
+        applied: false,
+        accountSetup: false,
+        verified: false,
+        allDone: false,
+        lastUpdatedAt: new Date(),
+      },
+      isLive: false,
       location: {},
     });
   }

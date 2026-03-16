@@ -8,16 +8,45 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+const normalizeIndianPhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 10) return String(phone || '').trim();
+  return `+91${digits.slice(-10)}`;
+};
+
+const isArtistProfileComplete = (artist) =>
+  Boolean(
+    String(artist?.name || '').trim() &&
+      String(artist?.expertise || '').trim() &&
+      String(artist?.serviceLocation || '').trim() &&
+      String(artist?.profilePhoto || '').trim() &&
+      String(artist?.aadharCard || '').trim()
+  );
+
+const buildOnboardingProgress = (artist) => {
+  const complete = isArtistProfileComplete(artist);
+  const verified = artist?.status === 'APPROVED';
+  return {
+    applied: complete,
+    accountSetup: complete,
+    verified,
+    allDone: verified && complete,
+    lastUpdatedAt: new Date(),
+  };
+};
+
 export const getAdminMe = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, req.user, 'Admin profile fetched'));
 });
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
-  const [totalUsers, totalArtists, pendingArtistsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
+  const [totalUsers, totalArtists, pendingArtistsCount, approvedArtistsCount, liveArtistsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
     await Promise.all([
       User.countDocuments({ role: 'USER' }),
       Artist.countDocuments(),
       Artist.countDocuments({ status: 'PENDING' }),
+      Artist.countDocuments({ status: 'APPROVED' }),
+      Artist.countDocuments({ isLive: true }),
       Booking.countDocuments(),
       Payment.aggregate([
         { $match: { status: 'SUCCESS' } },
@@ -51,7 +80,15 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     new ApiResponse(
       200,
       {
-        stats: { totalUsers, totalArtists, pendingArtistsCount, totalBookings, totalRevenue },
+        stats: {
+          totalUsers,
+          totalArtists,
+          pendingArtistsCount,
+          approvedArtistsCount,
+          liveArtistsCount,
+          totalBookings,
+          totalRevenue,
+        },
         recentBookings,
         bookingsByStatus,
         bookingTrend,
@@ -213,6 +250,10 @@ export const approveRejectArtist = asyncHandler(async (req, res) => {
   const artist = await Artist.findByIdAndUpdate(id, { $set: { status } }, { new: true }).select('-refreshToken');
   if (!artist) throw new ApiError(404, 'Artist not found');
 
+  artist.onboardingProgress = buildOnboardingProgress(artist);
+  artist.isLive = artist.onboardingProgress.allDone;
+  await artist.save({ validateBeforeSave: false });
+
   res.status(200).json(new ApiResponse(200, artist, `Artist ${status.toLowerCase()}`));
 });
 
@@ -277,7 +318,7 @@ export const createArtist = asyncHandler(async (req, res) => {
   if (!profilePhoto || !String(profilePhoto).trim()) throw new ApiError(400, 'Profile photo is required');
   if (!aadharCard || !String(aadharCard).trim()) throw new ApiError(400, 'Aadhar card is required');
 
-  const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
+  const normalizedPhone = normalizeIndianPhone(phone);
   const existing = await Artist.findOne({ phone: normalizedPhone });
   if (existing) throw new ApiError(409, 'An artist with this phone number already exists');
 
@@ -302,6 +343,14 @@ export const createArtist = asyncHandler(async (req, res) => {
     profilePhoto: String(profilePhoto).trim(),
     aadharCard: String(aadharCard).trim(),
     status: 'PENDING',
+    onboardingProgress: {
+      applied: true,
+      accountSetup: true,
+      verified: false,
+      allDone: false,
+      lastUpdatedAt: new Date(),
+    },
+    isLive: false,
     location: {},
   });
 

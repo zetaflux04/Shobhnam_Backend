@@ -3,6 +3,27 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+const isArtistProfileComplete = (artist) =>
+  Boolean(
+    String(artist?.name || '').trim() &&
+      String(artist?.expertise || '').trim() &&
+      String(artist?.serviceLocation || '').trim() &&
+      String(artist?.profilePhoto || '').trim() &&
+      String(artist?.aadharCard || '').trim()
+  );
+
+const buildOnboardingProgress = (artist) => {
+  const complete = isArtistProfileComplete(artist);
+  const verified = artist?.status === 'APPROVED';
+  return {
+    applied: complete,
+    accountSetup: complete,
+    verified,
+    allDone: verified && complete,
+    lastUpdatedAt: new Date(),
+  };
+};
+
 export const getMyArtistProfile = asyncHandler(async (req, res) => {
   res.status(200).json(
     new ApiResponse(200, req.user, 'Artist profile fetched successfully')
@@ -69,6 +90,7 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
     city,
     state,
     serviceLocation,
+    serviceLocationDetails,
     youtubeLink,
     profilePhoto,
     aadharCard,
@@ -84,6 +106,9 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
   if (expertise) updates.$set.expertise = expertise;
   if (ramleelaCharacter) updates.$set.ramleelaCharacter = ramleelaCharacter;
   if (serviceLocation) updates.$set.serviceLocation = serviceLocation;
+  if (serviceLocationDetails && typeof serviceLocationDetails === 'object') {
+    updates.$set.serviceLocationDetails = serviceLocationDetails;
+  }
   if (youtubeLink !== undefined) updates.$set.youtubeLink = youtubeLink || '';
 
   const expYears = experienceYears !== undefined ? experienceYears : parseExperienceYears(experience);
@@ -127,6 +152,14 @@ export const updateArtistProfile = asyncHandler(async (req, res) => {
   if (!updatedArtist) {
     throw new ApiError(404, 'Artist not found');
   }
+
+  const nextProgress = buildOnboardingProgress(updatedArtist);
+  updatedArtist.onboardingProgress = nextProgress;
+  updatedArtist.isLive = nextProgress.allDone;
+  if (nextProgress.accountSetup && updatedArtist.status === 'REJECTED') {
+    updatedArtist.status = 'PENDING';
+  }
+  await updatedArtist.save({ validateBeforeSave: false });
 
   res.status(200).json(
     new ApiResponse(200, updatedArtist, 'Profile updated successfully')
@@ -213,6 +246,10 @@ export const approveRejectArtist = asyncHandler(async (req, res) => {
   ).select('-refreshToken');
 
   if (!artist) throw new ApiError(404, 'Artist not found');
+
+  artist.onboardingProgress = buildOnboardingProgress(artist);
+  artist.isLive = artist.onboardingProgress.allDone;
+  await artist.save({ validateBeforeSave: false });
 
   res.status(200).json(
     new ApiResponse(200, artist, `Artist has been ${status.toLowerCase()}`)
