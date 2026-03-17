@@ -16,6 +16,27 @@ const orderItemSchema = new mongoose.Schema(
     addressLabel: { type: String },
     city: { type: String },
     pinCode: { type: String },
+    artist: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Artist',
+    },
+    assignment: {
+      assignedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      assignedAt: {
+        type: Date,
+      },
+      source: {
+        type: String,
+        enum: ['ADMIN'],
+      },
+      note: {
+        type: String,
+        trim: true,
+      },
+    },
   },
   { _id: false }
 );

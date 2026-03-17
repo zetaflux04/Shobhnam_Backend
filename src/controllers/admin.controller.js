@@ -1,6 +1,7 @@
 import { Artist } from '../models/artist.model.js';
 import { Booking } from '../models/booking.model.js';
 import { Category } from '../models/category.model.js';
+import { Order } from '../models/order.model.js';
 import { Payment } from '../models/payment.model.js';
 import { Review } from '../models/review.model.js';
 import { User } from '../models/user.model.js';
@@ -47,7 +48,21 @@ export const getAdminMe = asyncHandler(async (req, res) => {
 });
 
 export const getDashboardStats = asyncHandler(async (req, res) => {
-  const [totalUsers, totalArtists, pendingArtistsCount, approvedArtistsCount, liveArtistsCount, pendingBankVerificationsCount, totalBookings, revenueData, recentBookings, bookingsByStatus, bookingTrend] =
+  const [
+    totalUsers,
+    totalArtists,
+    pendingArtistsCount,
+    approvedArtistsCount,
+    liveArtistsCount,
+    pendingBankVerificationsCount,
+    totalBookings,
+    totalOrders,
+    revenueData,
+    recentBookings,
+    recentOrders,
+    bookingsByStatus,
+    bookingTrend,
+  ] =
     await Promise.all([
       User.countDocuments({ role: 'USER' }),
       Artist.countDocuments(),
@@ -56,6 +71,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       Artist.countDocuments({ isLive: true }),
       Artist.countDocuments({ 'bankVerification.status': BANK_VERIFICATION_STATUS.PENDING }),
       Booking.countDocuments(),
+      Order.countDocuments(),
       Payment.aggregate([
         { $match: { status: 'SUCCESS' } },
         { $group: { _id: null, totalRevenue: { $sum: '$amount' } } },
@@ -65,6 +81,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         .limit(5)
         .populate('user', 'name phone')
         .populate('artist', 'name'),
+      Order.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('user', 'name phone'),
       Booking.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
       Booking.aggregate([
         {
@@ -96,9 +116,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
           liveArtistsCount,
           pendingBankVerificationsCount,
           totalBookings,
+          totalOrders,
           totalRevenue,
         },
         recentBookings,
+        recentOrders,
         bookingsByStatus,
         bookingTrend,
       },
@@ -458,6 +480,45 @@ export const createArtist = asyncHandler(async (req, res) => {
   );
 });
 
+const isSameId = (left, right) => String(left) === String(right);
+
+const getBookingAssignedArtists = (booking) => {
+  const currentEntries = Array.isArray(booking.assignedArtists) ? [...booking.assignedArtists] : [];
+  const hasLegacyArtist = booking.artist && !currentEntries.some((entry) => isSameId(entry.artist, booking.artist));
+
+  if (!hasLegacyArtist) return currentEntries;
+
+  return [
+    {
+      artist: booking.artist,
+      assignedBy: booking.assignment?.assignedBy,
+      assignedAt: booking.assignment?.assignedAt || booking.updatedAt || booking.createdAt || new Date(),
+      source: booking.assignment?.source || 'ADMIN',
+      note: booking.assignment?.note,
+    },
+    ...currentEntries,
+  ];
+};
+
+const syncLegacyAssignmentFields = (booking, assignedArtists) => {
+  booking.assignedArtists = assignedArtists;
+  const primaryAssignment = assignedArtists[0];
+
+  if (!primaryAssignment) {
+    booking.artist = undefined;
+    booking.assignment = undefined;
+    return;
+  }
+
+  booking.artist = primaryAssignment.artist;
+  booking.assignment = {
+    assignedBy: primaryAssignment.assignedBy,
+    assignedAt: primaryAssignment.assignedAt,
+    source: primaryAssignment.source,
+    note: primaryAssignment.note,
+  };
+};
+
 export const getAllBookings = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
   const skip = (page - 1) * limit;
@@ -469,6 +530,7 @@ export const getAllBookings = asyncHandler(async (req, res) => {
     Booking.find(query)
       .populate('user', 'name phone email')
       .populate('artist', 'name location')
+      .populate('assignedArtists.artist', 'name phone category location')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -493,6 +555,7 @@ export const getBookingById = asyncHandler(async (req, res) => {
   const booking = await Booking.findById(id)
     .populate('user', 'name phone email city')
     .populate('artist', 'name phone email location pricing')
+    .populate('assignedArtists.artist', 'name phone email category location pricing')
     .populate('paymentId');
   if (!booking) throw new ApiError(404, 'Booking not found');
   res.status(200).json(new ApiResponse(200, booking, 'Booking details fetched'));
@@ -515,31 +578,155 @@ export const assignArtistToBooking = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Only approved artists can be assigned');
   }
 
-  booking.artist = artist._id;
-  booking.assignment = {
+  const assignedArtists = getBookingAssignedArtists(booking);
+  const alreadyAssigned = assignedArtists.some((entry) => isSameId(entry.artist, artist._id));
+  if (alreadyAssigned) {
+    throw new ApiError(409, 'Artist is already assigned to this booking');
+  }
+
+  assignedArtists.push({
+    artist: artist._id,
     assignedBy: req.user._id,
     assignedAt: new Date(),
     source: 'ADMIN',
     note: note ? String(note).trim() : undefined,
-  };
+  });
+
+  syncLegacyAssignmentFields(booking, assignedArtists);
 
   await booking.save();
   await booking.populate('artist', 'name phone category');
+  await booking.populate('assignedArtists.artist', 'name phone category location');
 
   res.status(200).json(new ApiResponse(200, booking, 'Artist assigned to booking'));
 });
 
 export const unassignArtistFromBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { artistId } = req.body;
+
+  if (!artistId) throw new ApiError(400, 'artistId is required');
 
   const booking = await Booking.findById(id);
   if (!booking) throw new ApiError(404, 'Booking not found');
 
-  booking.artist = undefined;
-  booking.assignment = undefined;
+  const assignedArtists = getBookingAssignedArtists(booking);
+  const updatedAssignedArtists = assignedArtists.filter((entry) => !isSameId(entry.artist, artistId));
+
+  if (updatedAssignedArtists.length === assignedArtists.length) {
+    throw new ApiError(404, 'Artist is not assigned to this booking');
+  }
+
+  syncLegacyAssignmentFields(booking, updatedAssignedArtists);
+
   await booking.save();
+  await booking.populate('artist', 'name phone category');
+  await booking.populate('assignedArtists.artist', 'name phone category location');
 
   res.status(200).json(new ApiResponse(200, booking, 'Artist unassigned from booking'));
+});
+
+export const getAllOrders = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, paymentStatus = '', search = '' } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const query = {};
+  if (paymentStatus) query.paymentStatus = paymentStatus;
+  if (search) {
+    query.$or = [
+      { 'items.serviceName': { $regex: search, $options: 'i' } },
+      { 'items.packageTitle': { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const [orders, totalCount] = await Promise.all([
+    Order.find(query)
+      .populate('user', 'name phone email')
+      .populate('items.artist', 'name phone category')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit)),
+    Order.countDocuments(query),
+  ]);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        orders,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          totalCount,
+          totalPages: Math.ceil(totalCount / Number(limit)),
+        },
+      },
+      'Orders fetched'
+    )
+  );
+});
+
+export const getOrderById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const order = await Order.findById(id)
+    .populate('user', 'name phone email city')
+    .populate('items.artist', 'name phone email category location');
+  if (!order) throw new ApiError(404, 'Order not found');
+  res.status(200).json(new ApiResponse(200, order, 'Order details fetched'));
+});
+
+export const assignArtistToOrderItem = asyncHandler(async (req, res) => {
+  const { id, itemIndex } = req.params;
+  const { artistId, note } = req.body;
+
+  if (!artistId) throw new ApiError(400, 'artistId is required');
+
+  const [order, artist] = await Promise.all([
+    Order.findById(id),
+    Artist.findById(artistId),
+  ]);
+  if (!order) throw new ApiError(404, 'Order not found');
+  if (!artist) throw new ApiError(404, 'Artist not found');
+  if (artist.status !== 'APPROVED') throw new ApiError(400, 'Only approved artists can be assigned');
+
+  const parsedItemIndex = Number(itemIndex);
+  if (!Number.isInteger(parsedItemIndex) || parsedItemIndex < 0 || parsedItemIndex >= order.items.length) {
+    throw new ApiError(400, 'Invalid item index');
+  }
+
+  const targetItem = order.items[parsedItemIndex];
+  targetItem.artist = artist._id;
+  targetItem.assignment = {
+    assignedBy: req.user._id,
+    assignedAt: new Date(),
+    source: 'ADMIN',
+    note: note ? String(note).trim() : undefined,
+  };
+
+  await order.save();
+  await order.populate('items.artist', 'name phone category');
+
+  res.status(200).json(new ApiResponse(200, order, 'Artist assigned to package'));
+});
+
+export const unassignArtistFromOrderItem = asyncHandler(async (req, res) => {
+  const { id, itemIndex } = req.params;
+  const order = await Order.findById(id);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  const parsedItemIndex = Number(itemIndex);
+  if (!Number.isInteger(parsedItemIndex) || parsedItemIndex < 0 || parsedItemIndex >= order.items.length) {
+    throw new ApiError(400, 'Invalid item index');
+  }
+
+  const targetItem = order.items[parsedItemIndex];
+  targetItem.artist = undefined;
+  targetItem.assignment = undefined;
+
+  await order.save();
+  await order.populate('items.artist', 'name phone category');
+
+  res.status(200).json(new ApiResponse(200, order, 'Artist unassigned from package'));
 });
 
 export const getAllReviews = asyncHandler(async (req, res) => {

@@ -19,19 +19,68 @@ const mockSmsCheck = async (phone, msg) => {
 };
 
 export const createBooking = asyncHandler(async (req, res) => {
-  const { artistId, date, type, expectedAudienceSize, specialRequirements, address, city, pinCode } = req.body;
+  const {
+    artistId,
+    date,
+    slot,
+    type,
+    expectedAudienceSize,
+    specialRequirements,
+    addressId,
+    address,
+    city,
+    pinCode,
+    addressLabel,
+    recipientName,
+    recipientPhone,
+    agreedPrice,
+    assignmentSource,
+    assignmentNote,
+  } = req.body;
+
+  if (!artistId) throw new ApiError(400, 'artistId is required');
+  if (!date) throw new ApiError(400, 'date is required');
+  if (!slot) throw new ApiError(400, 'slot is required');
+  if (!type) throw new ApiError(400, 'type is required');
+  if (!address || !city) throw new ApiError(400, 'address and city are required');
 
   const artist = await Artist.findById(artistId);
   if (!artist) throw new ApiError(404, 'Artist not found');
   if (artist.status !== 'APPROVED') throw new ApiError(400, 'Artist is not available for booking');
 
+  const source = assignmentSource === 'RAMLEELA_CUSTOMIZATION' ? 'RAMLEELA_CUSTOMIZATION' : 'ADMIN';
+  const resolvedPrice = Number.isFinite(Number(agreedPrice)) ? Number(agreedPrice) : artist.pricing.basePrice;
+
   const newBooking = await Booking.create({
     user: req.user._id,
     artist: artistId,
-    eventDetails: { date, type, expectedAudienceSize, specialRequirements },
-    location: { address, city, pinCode },
-    pricing: { agreedPrice: artist.pricing.basePrice, currency: artist.pricing.currency },
-    status: 'PENDING'
+    eventDetails: { date, slot, type, expectedAudienceSize, specialRequirements },
+    location: {
+      addressId,
+      address,
+      city,
+      pinCode,
+      saveAs: addressLabel,
+      recipientName,
+      recipientPhone,
+    },
+    pricing: { agreedPrice: resolvedPrice, currency: artist.pricing.currency },
+    status: 'PENDING',
+    assignment: {
+      assignedBy: req.user._id,
+      assignedAt: new Date(),
+      source,
+      note: assignmentNote ? String(assignmentNote).trim() : undefined,
+    },
+    assignedArtists: [
+      {
+        artist: artistId,
+        assignedBy: req.user._id,
+        assignedAt: new Date(),
+        source,
+        note: assignmentNote ? String(assignmentNote).trim() : undefined,
+      },
+    ],
   });
 
   // Notify Artist
@@ -72,7 +121,12 @@ export const completeBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
   
   const query = { _id: id };
-  if (req.user.role === 'ARTIST') query.artist = req.user._id;
+  if (req.user.role === 'ARTIST') {
+    query.$or = [
+      { artist: req.user._id },
+      { 'assignedArtists.artist': req.user._id },
+    ];
+  }
   if (req.user.role === 'USER') query.user = req.user._id;
 
   const booking = await Booking.findOne(query);
@@ -97,7 +151,12 @@ export const getUserBookings = asyncHandler(async (req, res) => {
 });
 
 export const getArtistBookings = asyncHandler(async (req, res) => {
-  const bookings = await Booking.find({ artist: req.user._id })
+  const bookings = await Booking.find({
+    $or: [
+      { artist: req.user._id },
+      { 'assignedArtists.artist': req.user._id },
+    ],
+  })
     .populate('user', 'name city profilePhoto phone')
     .sort({ createdAt: -1 });
 

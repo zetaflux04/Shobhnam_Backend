@@ -68,6 +68,31 @@ const bookingSchema = new mongoose.Schema(
         trim: true,
       },
     },
+    assignedArtists: [
+      {
+        artist: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Artist',
+          required: true,
+        },
+        assignedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        source: {
+          type: String,
+          enum: ['ADMIN', 'RAMLEELA_CUSTOMIZATION'],
+        },
+        note: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );

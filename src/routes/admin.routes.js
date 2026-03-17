@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  assignArtistToOrderItem,
   assignArtistToBooking,
   approveRejectArtist,
   banUser,
@@ -13,14 +14,17 @@ import {
   getBankVerificationArtists,
   getArtistApplications,
   getAllBookings,
+  getAllOrders,
   getAllReviews,
   getAllUsers,
   getBookingById,
   getCategories,
   getCategoriesForAdmin,
   getDashboardStats,
+  getOrderById,
   reviewArtistBankVerification,
   toggleCategory,
+  unassignArtistFromOrderItem,
   unassignArtistFromBooking,
   uploadAadharAdmin,
   uploadPanCardAdmin,
@@ -63,6 +67,10 @@ router.get('/bookings', getAllBookings);
 router.get('/bookings/:id', getBookingById);
 router.patch('/bookings/:id/assign-artist', assignArtistToBooking);
 router.patch('/bookings/:id/unassign-artist', unassignArtistFromBooking);
+router.get('/orders', getAllOrders);
+router.get('/orders/:id', getOrderById);
+router.patch('/orders/:id/items/:itemIndex/assign-artist', assignArtistToOrderItem);
+router.patch('/orders/:id/items/:itemIndex/unassign-artist', unassignArtistFromOrderItem);
 
 router.get('/reviews', getAllReviews);
 router.delete('/reviews/:id', deleteReview);
