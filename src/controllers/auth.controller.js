@@ -7,8 +7,13 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-// Test number for development: accepts OTP 123456 without prior sendOtp
-const TEST_PHONE = '+918546031266';
+// Demo numbers for development: accept OTP 123456 without prior sendOtp
+const TEST_PHONES = new Set([
+  '+918546031266',
+  '+918303438175',
+  '+919369299589',
+  '+919876543210',
+]);
 const TEST_OTP = '123456';
 
 // Normalize phone to E.164 for Indian numbers (Twilio needs +91XXXXXXXXXX)
@@ -55,8 +60,8 @@ export const sendOtp = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  // Test number: use fixed OTP, skip Twilio SMS
-  const isTestNumber = normalizedPhone === TEST_PHONE;
+  // Demo numbers: use fixed OTP, skip WhatsApp send
+  const isTestNumber = TEST_PHONES.has(normalizedPhone);
   const otpCode = isTestNumber ? TEST_OTP : Math.floor(100000 + Math.random() * 900000).toString();
 
   // Save OTP in Database
@@ -85,8 +90,8 @@ export const verifyOtpUser = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  // Test number: accept 123456 without DB lookup
-  const isTestNumber = normalizedPhone === TEST_PHONE && otp === TEST_OTP;
+  // Demo numbers: accept 123456 without DB lookup
+  const isTestNumber = TEST_PHONES.has(normalizedPhone) && otp === TEST_OTP;
   if (!isTestNumber) {
     const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
     if (!record) throw new ApiError(400, 'Invalid or Expired OTP');
@@ -123,8 +128,8 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone);
 
-  // Test number: accept 123456 without DB lookup
-  const isTestNumber = normalizedPhone === TEST_PHONE && otp === TEST_OTP;
+  // Demo numbers: accept 123456 without DB lookup
+  const isTestNumber = TEST_PHONES.has(normalizedPhone) && otp === TEST_OTP;
   if (!isTestNumber) {
     const record = await OTP.findOne({ phone: normalizedPhone, otp, isUsed: false });
     if (!record) throw new ApiError(400, 'Invalid or Expired OTP');

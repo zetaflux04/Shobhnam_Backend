@@ -30,3 +30,31 @@ export const seedAdmin = async () => {
     console.error('⚠️  Admin seeding failed:', error.message);
   }
 };
+
+const DEMO_USERS = [
+  { phone: '+918303438175', name: 'Demo User 1', city: 'New Delhi' },
+  { phone: '+919369299589', name: 'Demo User 2', city: 'New Delhi' },
+  { phone: '+919876543210', name: 'Demo User 3', city: 'New Delhi' },
+];
+
+export const seedDemoUsers = async () => {
+  try {
+    for (const demoUser of DEMO_USERS) {
+      await User.updateOne(
+        { phone: demoUser.phone },
+        {
+          $setOnInsert: {
+            name: demoUser.name,
+            phone: demoUser.phone,
+            city: demoUser.city,
+            role: 'USER',
+          },
+        },
+        { upsert: true }
+      );
+    }
+    console.log('✅ Demo users seed check completed');
+  } catch (error) {
+    console.error('⚠️  Demo users seeding failed:', error.message);
+  }
+};
