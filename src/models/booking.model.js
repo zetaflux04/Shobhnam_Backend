@@ -93,6 +93,21 @@ const bookingSchema = new mongoose.Schema(
         },
       },
     ],
+    sourceType: {
+      type: String,
+      enum: ['DIRECT_BOOKING', 'ORDER_ITEM'],
+      default: 'DIRECT_BOOKING',
+      index: true,
+    },
+    sourceRef: {
+      orderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Order',
+      },
+      itemIndex: {
+        type: Number,
+      },
+    },
   },
   { timestamps: true }
 );

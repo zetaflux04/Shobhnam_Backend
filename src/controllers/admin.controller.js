@@ -519,6 +519,121 @@ const syncLegacyAssignmentFields = (booking, assignedArtists) => {
   };
 };
 
+const getOrderItemAssignedArtists = (orderItem) => {
+  const currentEntries = Array.isArray(orderItem.assignedArtists) ? [...orderItem.assignedArtists] : [];
+  const hasLegacyArtist = orderItem.artist && !currentEntries.some((entry) => isSameId(entry.artist, orderItem.artist));
+
+  if (!hasLegacyArtist) return currentEntries;
+
+  return [
+    {
+      artist: orderItem.artist,
+      assignedBy: orderItem.assignment?.assignedBy,
+      assignedAt: orderItem.assignment?.assignedAt || new Date(),
+      source: orderItem.assignment?.source || 'ADMIN',
+      note: orderItem.assignment?.note,
+    },
+    ...currentEntries,
+  ];
+};
+
+const syncOrderItemLegacyAssignmentFields = (orderItem, assignedArtists) => {
+  orderItem.assignedArtists = assignedArtists;
+  const primaryAssignment = assignedArtists[0];
+
+  if (!primaryAssignment) {
+    orderItem.artist = undefined;
+    orderItem.assignment = undefined;
+    return;
+  }
+
+  orderItem.artist = primaryAssignment.artist;
+  orderItem.assignment = {
+    assignedBy: primaryAssignment.assignedBy,
+    assignedAt: primaryAssignment.assignedAt,
+    source: primaryAssignment.source,
+    note: primaryAssignment.note,
+  };
+};
+
+const buildOrderItemEventDate = (orderItem) => {
+  const candidate = orderItem?.date || orderItem?.dateTime;
+  const date = candidate ? new Date(candidate) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+const buildOrderItemSlot = (orderItem) => {
+  const validSlots = ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM'];
+  return validSlots.includes(orderItem?.slot) ? orderItem.slot : '9:00 AM';
+};
+
+const buildOrderItemTypeLabel = (orderItem) => {
+  const type = [orderItem?.serviceName, orderItem?.packageTitle].filter(Boolean).join(' - ');
+  return type || 'Order package';
+};
+
+const syncLinkedBookingForOrderItem = async (order, itemIndex, assignedArtists) => {
+  const orderItem = order.items[itemIndex];
+  if (!orderItem) return;
+
+  const linkedBooking = await Booking.findOne({
+    sourceType: 'ORDER_ITEM',
+    'sourceRef.orderId': order._id,
+    'sourceRef.itemIndex': itemIndex,
+  });
+
+  if (!assignedArtists.length) {
+    if (!linkedBooking) return;
+    syncLegacyAssignmentFields(linkedBooking, []);
+    if (linkedBooking.status === 'PENDING' || linkedBooking.status === 'CONFIRMED') {
+      linkedBooking.status = 'CANCELLED';
+    }
+    await linkedBooking.save();
+    return;
+  }
+
+  const bookingData = {
+    user: order.user,
+    eventDetails: {
+      date: buildOrderItemEventDate(orderItem),
+      slot: buildOrderItemSlot(orderItem),
+      type: buildOrderItemTypeLabel(orderItem),
+    },
+    location: {
+      address: orderItem.addressDetail || 'Address unavailable',
+      city: orderItem.city || 'City unavailable',
+      pinCode: orderItem.pinCode,
+    },
+    pricing: {
+      agreedPrice: Number(orderItem.price || 0),
+      currency: order.currency || 'INR',
+    },
+    paymentStatus: ['PENDING', 'PAID', 'REFUNDED', 'FAILED'].includes(order.paymentStatus)
+      ? order.paymentStatus
+      : 'PENDING',
+    sourceType: 'ORDER_ITEM',
+    sourceRef: {
+      orderId: order._id,
+      itemIndex,
+    },
+  };
+
+  const booking = linkedBooking || new Booking(bookingData);
+  booking.user = bookingData.user;
+  booking.eventDetails = bookingData.eventDetails;
+  booking.location = bookingData.location;
+  booking.pricing = bookingData.pricing;
+  booking.paymentStatus = bookingData.paymentStatus;
+  booking.sourceType = bookingData.sourceType;
+  booking.sourceRef = bookingData.sourceRef;
+  if (booking.status === 'CANCELLED' || booking.status === 'REJECTED') {
+    booking.status = 'PENDING';
+  }
+
+  syncLegacyAssignmentFields(booking, assignedArtists);
+  await booking.save();
+};
+
 export const getAllBookings = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
   const skip = (page - 1) * limit;
@@ -643,6 +758,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
     Order.find(query)
       .populate('user', 'name phone email')
       .populate('items.artist', 'name phone category')
+      .populate('items.assignedArtists.artist', 'name phone category location')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -670,24 +786,33 @@ export const getOrderById = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const order = await Order.findById(id)
     .populate('user', 'name phone email city')
-    .populate('items.artist', 'name phone email category location');
+    .populate('items.artist', 'name phone email category location')
+    .populate('items.assignedArtists.artist', 'name phone email category location');
   if (!order) throw new ApiError(404, 'Order not found');
   res.status(200).json(new ApiResponse(200, order, 'Order details fetched'));
 });
 
 export const assignArtistToOrderItem = asyncHandler(async (req, res) => {
   const { id, itemIndex } = req.params;
-  const { artistId, note } = req.body;
+  const { artistId, artistIds, note } = req.body;
+  const incomingArtistIds = [artistId, ...(Array.isArray(artistIds) ? artistIds : [])]
+    .filter(Boolean)
+    .map((value) => String(value));
+  const uniqueArtistIds = [...new Set(incomingArtistIds)];
 
-  if (!artistId) throw new ApiError(400, 'artistId is required');
+  if (!uniqueArtistIds.length) {
+    throw new ApiError(400, 'artistId or artistIds is required');
+  }
 
-  const [order, artist] = await Promise.all([
+  const [order, artists] = await Promise.all([
     Order.findById(id),
-    Artist.findById(artistId),
+    Artist.find({ _id: { $in: uniqueArtistIds } }),
   ]);
   if (!order) throw new ApiError(404, 'Order not found');
-  if (!artist) throw new ApiError(404, 'Artist not found');
-  if (artist.status !== 'APPROVED') throw new ApiError(400, 'Only approved artists can be assigned');
+  if (artists.length !== uniqueArtistIds.length) throw new ApiError(404, 'One or more artists were not found');
+
+  const hasUnapprovedArtist = artists.some((artist) => artist.status !== 'APPROVED');
+  if (hasUnapprovedArtist) throw new ApiError(400, 'Only approved artists can be assigned');
 
   const parsedItemIndex = Number(itemIndex);
   if (!Number.isInteger(parsedItemIndex) || parsedItemIndex < 0 || parsedItemIndex >= order.items.length) {
@@ -695,22 +820,41 @@ export const assignArtistToOrderItem = asyncHandler(async (req, res) => {
   }
 
   const targetItem = order.items[parsedItemIndex];
-  targetItem.artist = artist._id;
-  targetItem.assignment = {
-    assignedBy: req.user._id,
-    assignedAt: new Date(),
-    source: 'ADMIN',
-    note: note ? String(note).trim() : undefined,
-  };
+  const assignedArtists = getOrderItemAssignedArtists(targetItem);
+  const noteValue = note ? String(note).trim() : undefined;
+  let addedCount = 0;
+
+  for (const artist of artists) {
+    const alreadyAssigned = assignedArtists.some((entry) => isSameId(entry.artist, artist._id));
+    if (alreadyAssigned) continue;
+
+    assignedArtists.push({
+      artist: artist._id,
+      assignedBy: req.user._id,
+      assignedAt: new Date(),
+      source: 'ADMIN',
+      note: noteValue,
+    });
+    addedCount += 1;
+  }
+
+  if (!addedCount) {
+    throw new ApiError(409, 'Selected artists are already assigned to this package');
+  }
+
+  syncOrderItemLegacyAssignmentFields(targetItem, assignedArtists);
 
   await order.save();
+  await syncLinkedBookingForOrderItem(order, parsedItemIndex, assignedArtists);
   await order.populate('items.artist', 'name phone category');
+  await order.populate('items.assignedArtists.artist', 'name phone category location');
 
   res.status(200).json(new ApiResponse(200, order, 'Artist assigned to package'));
 });
 
 export const unassignArtistFromOrderItem = asyncHandler(async (req, res) => {
   const { id, itemIndex } = req.params;
+  const { artistId } = req.body || {};
   const order = await Order.findById(id);
   if (!order) throw new ApiError(404, 'Order not found');
 
@@ -720,13 +864,23 @@ export const unassignArtistFromOrderItem = asyncHandler(async (req, res) => {
   }
 
   const targetItem = order.items[parsedItemIndex];
-  targetItem.artist = undefined;
-  targetItem.assignment = undefined;
+  const assignedArtists = getOrderItemAssignedArtists(targetItem);
+  const updatedAssignedArtists = artistId
+    ? assignedArtists.filter((entry) => !isSameId(entry.artist, artistId))
+    : [];
+
+  if (artistId && updatedAssignedArtists.length === assignedArtists.length) {
+    throw new ApiError(404, 'Artist is not assigned to this package');
+  }
+
+  syncOrderItemLegacyAssignmentFields(targetItem, updatedAssignedArtists);
 
   await order.save();
+  await syncLinkedBookingForOrderItem(order, parsedItemIndex, updatedAssignedArtists);
   await order.populate('items.artist', 'name phone category');
+  await order.populate('items.assignedArtists.artist', 'name phone category location');
 
-  res.status(200).json(new ApiResponse(200, order, 'Artist unassigned from package'));
+  res.status(200).json(new ApiResponse(200, order, artistId ? 'Artist unassigned from package' : 'All artists unassigned from package'));
 });
 
 export const getAllReviews = asyncHandler(async (req, res) => {

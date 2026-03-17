@@ -97,7 +97,13 @@ export const respondToBooking = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Invalid status. Can only be CONFIRMED or REJECTED');
   }
 
-  const booking = await Booking.findOne({ _id: id, artist: req.user._id }).populate('user', 'name phone');
+  const booking = await Booking.findOne({
+    _id: id,
+    $or: [
+      { artist: req.user._id },
+      { 'assignedArtists.artist': req.user._id },
+    ],
+  }).populate('user', 'name phone');
   if (!booking) throw new ApiError(404, 'Booking not found or not assigned to you');
 
   if (booking.status !== 'PENDING') {
