@@ -68,8 +68,8 @@ const buildOrderItemEventDate = (orderItem) => {
 };
 
 const buildOrderItemSlot = (orderItem) => {
-  const validSlots = ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM'];
-  return validSlots.includes(orderItem?.slot) ? orderItem.slot : '9:00 AM';
+  const validSlots = ['6AM-12PM', '12PM-6PM', '6PM-12AM', '12AM-6AM'];
+  return validSlots.includes(orderItem?.slot) ? orderItem.slot : '6AM-12PM';
 };
 
 const buildOrderItemTypeLabel = (orderItem) => {

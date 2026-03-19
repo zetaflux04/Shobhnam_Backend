@@ -15,7 +15,7 @@ const bookingSchema = new mongoose.Schema(
     },
     eventDetails: {
       date: { type: Date, required: true },
-      slot: { type: String, enum: ['9:00 AM', '12:00 PM', '3:00 PM', '6:00 PM'], required: true },
+      slot: { type: String, enum: ['6AM-12PM', '12PM-6PM', '6PM-12AM', '12AM-6AM'], required: true },
       type: { type: String, required: true }, // array of strings maybe? e.g. 'Ramleela', 'Sundarkand'
       expectedAudienceSize: { type: Number },
       specialRequirements: { type: String },
