@@ -99,15 +99,21 @@ export const verifyOtpUser = asyncHandler(async (req, res) => {
     await record.save();
   }
 
-  // Check if User exists
-  let user = await User.findOne({ phone: normalizedPhone });
+  // Check if User exists by normalized phone variants
+  let user = await User.findOne(buildPhoneLookupQuery(normalizedPhone));
+  const isExistingUser = !!user;
+  let requiresName = false;
 
   if (!user) {
-    // Register flow
-    if (!name) {
-      throw new ApiError(400, 'Name is required for new user registration');
-    }
-    user = await User.create({ phone: normalizedPhone, name, city, role: 'USER' });
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    requiresName = !trimmedName;
+    user = await User.create({
+      phone: normalizedPhone,
+      // Create the user after OTP; app can collect and patch a real name in the next step.
+      name: trimmedName || `User ${normalizedPhone.slice(-4)}`,
+      city,
+      role: 'USER',
+    });
   }
 
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens('USER', user._id);
@@ -118,7 +124,13 @@ export const verifyOtpUser = asyncHandler(async (req, res) => {
     .status(200)
     .cookie('accessToken', accessToken, options)
     .cookie('refreshToken', refreshToken, options)
-    .json(new ApiResponse(200, { user, accessToken, refreshToken }, 'User logged in successfully'));
+    .json(
+      new ApiResponse(
+        200,
+        { user, accessToken, refreshToken, isExistingUser, requiresName },
+        'User logged in successfully'
+      )
+    );
 });
 
 export const verifyOtpArtist = asyncHandler(async (req, res) => {
@@ -137,8 +149,9 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
     await record.save();
   }
 
-  // Check if Artist exists
-  let artist = await Artist.findOne({ phone: normalizedPhone });
+  // Check if Artist exists by normalized phone variants
+  let artist = await Artist.findOne(buildPhoneLookupQuery(normalizedPhone));
+  const isExistingArtist = !!artist;
 
   if (!artist) {
     artist = await Artist.create({
@@ -168,7 +181,19 @@ export const verifyOtpArtist = asyncHandler(async (req, res) => {
     .status(200)
     .cookie('accessToken', accessToken, options)
     .cookie('refreshToken', refreshToken, options)
-    .json(new ApiResponse(200, { artist, accessToken, refreshToken }, 'Artist logged in successfully'));
+    .json(
+      new ApiResponse(
+        200,
+        {
+          artist,
+          accessToken,
+          refreshToken,
+          isExistingArtist,
+          requiresArtistForm: !isExistingArtist,
+        },
+        'Artist logged in successfully'
+      )
+    );
 });
 
 export const hasDualProfile = asyncHandler(async (req, res) => {
